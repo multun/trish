@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import re
 import sys
 
@@ -80,19 +82,18 @@ def compare_meta(a, b):
     return score
 
 
+def compare(file_a, file_b):
+    with open(file_a, 'r') as fileA:
+        lineA_lines = fileA.readlines()
+
+    with open(file_b, 'r') as fileB:
+        lineB_lines = fileB.readlines()
+
+    return compare_meta(*map(get_meta, (lineA_lines, lineB_lines)))
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} fileA fileB")
         exit(1)
-
-    with open(sys.argv[1], 'r') as fileA:
-        lineA_lines = fileA.readlines()
-
-    with open(sys.argv[2], 'r') as fileB:
-        lineB_lines = fileB.readlines()
-
-    metas = list(map(get_meta, (lineA_lines, lineB_lines)))
-    ca = compare_meta(*metas)
-    metas.reverse()
-    cb = compare_meta(*metas)
-    return ca + cb
+    print(compare(sys.argv[1], sys.argv[2]))
