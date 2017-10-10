@@ -9,25 +9,30 @@ from functools import partial
 from itertools import combinations
 from libtrish import get_meta, compare_meta
 
+try:
+    from tqdm import tqdm as progress
+except:
+    progress = lambda x: x
+
 
 CodeBase = namedtuple('CodeBase', ['folder', 'canon'])
 CodeBaseCmp = namedtuple('CodeBaseCmp', ['pair', 'score'])
 
 
-def batch_display(res, top_count=10):
-    res = sorted(res, key=lambda x: x.score, reverse=True)
-    for i in range(min(top_count, len(res))):
-        cur_res = res[i]
-        dir_names = ', '.join(map(lambda x: x.folder.name, cur_res.pair))
-        print(f'Rank: \t{i + 1}\t '
-              f'Score: \t{cur_res.score}\t '
-              f'Folders: \t{dir_names}')
+def batch_display(res):
+    res = sorted(res, key=lambda x: x.score)
+    for cur_res in res:
+        dir_names = '\t'.join(map(lambda x: x.folder.name, cur_res.pair))
+        print(f'{cur_res.score}\t{dir_names}')
 
 
 def get_dir_lines(dir_path, glob):
-    for file_path in dir_path.glob(glob):
-        with file_path.open() as fp:
-            yield from fp.readlines()
+    for file_path in filter(lambda x: x.is_file(), dir_path.glob(glob)):
+        try:
+            with file_path.open() as fp:
+                yield from fp.readlines()
+        except:
+            continue
 
 
 def get_dir_meta(*args, **kwargs):
@@ -39,16 +44,19 @@ def pair_compare(pair):
 
 
 def batch_compare(path, glob):
-    subdirs = lambda: filter(lambda e: e.is_dir(), path.iterdir())
+    subdirs = filter(lambda e: e.is_dir(), path.iterdir())
     make_codebase = lambda subdir: CodeBase(subdir, get_dir_meta(subdir, glob))
-    code_dirs = [make_codebase(subdir) for subdir in subdirs()]
-    pair_it = combinations(code_dirs, 2)
-    return [CodeBaseCmp(pair, pair_compare(pair)) for pair in pair_it]
+    code_dirs = list(map(make_codebase, subdirs))
+    code_count = len(code_dirs)
+    comb_count = code_count ** 2 / 2 - code_count / 2
+    pair_it = progress(combinations(code_dirs, 2), total=comb_count)
+    make_cmp = lambda pair: CodeBaseCmp(pair, pair_compare(pair))
+    return list(map(make_cmp, pair_it))
 
 
 if __name__ == '__main__':
     if len(sys.argv) not in (3, 4):
         print(f"Usage: {sys.argv[0]} FOLDER FILE_GLOB [DISP_COUNT]")
         exit(1)
-    nb = 10 if len(sys.argv) < 4 else int(sys.argv[3])
+
     batch_display(batch_compare(PosixPath(sys.argv[1]), sys.argv[2]))
