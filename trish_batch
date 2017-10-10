@@ -8,6 +8,7 @@ from collections import namedtuple
 from functools import partial
 from itertools import combinations
 from libtrish import get_meta, compare_meta
+from libtrish.par import par_list_map
 
 try:
     from tqdm import tqdm as progress
@@ -19,11 +20,10 @@ CodeBase = namedtuple('CodeBase', ['folder', 'canon'])
 CodeBaseCmp = namedtuple('CodeBaseCmp', ['pair', 'score'])
 
 
-def batch_display(res):
-    res = sorted(res, key=lambda x: x.score)
-    for cur_res in res:
-        dir_names = '\t'.join(map(lambda x: x.folder.name, cur_res.pair))
-        print(f'{cur_res.score}\t{dir_names}')
+def cmp_display(res):
+    dir_names = '\t'.join(map(lambda x: x.folder.name, res.pair))
+    print(f'{res.score}\t{dir_names}')
+    sys.stdout.flush()
 
 
 def get_dir_lines(dir_path, glob):
@@ -43,20 +43,25 @@ def pair_compare(pair):
     return compare_meta(*map(lambda x: x.canon, pair))
 
 
-def batch_compare(path, glob):
+def batch_compare(path, glob, proc):
     subdirs = filter(lambda e: e.is_dir(), path.iterdir())
     make_codebase = lambda subdir: CodeBase(subdir, get_dir_meta(subdir, glob))
     code_dirs = list(map(make_codebase, subdirs))
     code_count = len(code_dirs)
-    comb_count = code_count ** 2 / 2 - code_count / 2
-    pair_it = progress(combinations(code_dirs, 2), total=comb_count)
-    make_cmp = lambda pair: CodeBaseCmp(pair, pair_compare(pair))
-    return list(map(make_cmp, pair_it))
+    pair_list = list(combinations(code_dirs, 2))
+    pair_count = len(pair_list) # len(code_dirs) ** 2 // 2 - len(code_dirs) // 2
+    cmp = lambda pair: cmp_display(CodeBaseCmp(pair, pair_compare(pair)))
+    if proc < 2:
+        for e in progress(pair_list):
+            cmp(e)
+    else:
+        par_list_map(cmp, pair_list, pair_count, proc)
 
 
 if __name__ == '__main__':
     if len(sys.argv) not in (3, 4):
-        print(f"Usage: {sys.argv[0]} FOLDER FILE_GLOB [DISP_COUNT]")
+        print(f"Usage: {sys.argv[0]} FOLDER FILE_GLOB [PROC_COUNT]")
         exit(1)
 
-    batch_display(batch_compare(PosixPath(sys.argv[1]), sys.argv[2]))
+    proc = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+    batch_compare(PosixPath(sys.argv[1]), sys.argv[2], proc)
