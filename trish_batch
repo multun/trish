@@ -6,24 +6,16 @@ import os
 from pathlib import PosixPath
 from collections import namedtuple
 from functools import partial
-from itertools import combinations
-from libtrish import get_meta, compare_meta
+from itertools import combinations, chain
+from libtrish.chal import Challenge
 from libtrish.par import par_list_map
+from libtrish.conf import DefaultTrishConf
 
 try:
     from tqdm import tqdm as progress
 except:
     progress = lambda x: x
 
-
-CodeBase = namedtuple('CodeBase', ['folder', 'canon'])
-CodeBaseCmp = namedtuple('CodeBaseCmp', ['pair', 'score'])
-
-
-def cmp_display(res):
-    dir_names = '\t'.join(map(lambda x: x.folder.name, res.pair))
-    print(f'{res.score}\t{dir_names}')
-    sys.stdout.flush()
 
 
 def get_dir_lines(dir_path, glob):
@@ -35,27 +27,28 @@ def get_dir_lines(dir_path, glob):
             continue
 
 
-def get_dir_meta(*args, **kwargs):
-    return get_meta(get_dir_lines(*args, **kwargs))
+def get_dir_meta(conf, *args, **kwargs):
+    return conf.compute_meta(get_dir_lines(*args, **kwargs))
 
 
-def pair_compare(pair):
-    return compare_meta(*map(lambda x: x.canon, pair))
+def pair_process(conf, pair):
+    chal = conf.Challenge(*chain(*pair))
+    conf.exporter(chal, conf.evaluate_chal(chal))
+    sys.stdout.flush()
 
 
-def batch_compare(path, glob, proc):
-    subdirs = filter(lambda e: e.is_dir(), path.iterdir())
-    make_codebase = lambda subdir: CodeBase(subdir, get_dir_meta(subdir, glob))
-    code_dirs = list(map(make_codebase, subdirs))
-    code_count = len(code_dirs)
-    pair_list = list(combinations(code_dirs, 2))
-    pair_count = len(pair_list) # len(code_dirs) ** 2 // 2 - len(code_dirs) // 2
-    cmp = lambda pair: cmp_display(CodeBaseCmp(pair, pair_compare(pair)))
+def batch_compare(conf, path, glob, proc):
+    subdirs = list(filter(lambda e: e.is_dir(), path.iterdir()))
+    codebases = list(map(lambda sdir: get_dir_meta(conf, sdir, glob), subdirs))
+    metas = list(zip(codebases, map(lambda e: e.name, subdirs)))
+    pair_list = list(combinations(metas, 2))
+    pair_count = len(pair_list) # len(metas) ** 2 // 2 - len(metas) // 2
+    wproc = lambda e: pair_process(conf, e)
     if proc < 2:
         for e in progress(pair_list):
-            cmp(e)
+            wproc(e)
     else:
-        par_list_map(cmp, pair_list, pair_count, proc)
+        par_list_map(wproc, pair_list, pair_count, proc)
 
 
 if __name__ == '__main__':
@@ -64,4 +57,5 @@ if __name__ == '__main__':
         exit(1)
 
     proc = int(sys.argv[3]) if len(sys.argv) > 3 else 1
-    batch_compare(PosixPath(sys.argv[1]), sys.argv[2], proc)
+    conf = DefaultTrishConf()
+    batch_compare(conf, PosixPath(sys.argv[1]), sys.argv[2], proc)
