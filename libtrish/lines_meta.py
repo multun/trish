@@ -1,7 +1,8 @@
 from collections import namedtuple, defaultdict
-from .canon import canonicalize
+
 
 LinesMeta = namedtuple('LinesMeta', ['canon_occ', 'lines'])
+
 
 def compute_meta(conf, lines):
     canon_map = defaultdict(set)

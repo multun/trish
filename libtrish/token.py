@@ -7,6 +7,7 @@ token_split_re = re.compile('[ \n]|(\w+)')
 def get_line_tokens(conf, line):
     # TODO: endless comment
     it = iter(re.split(conf.token_split_re, line))
+
     def get_raw_groups(it):
         state = False
         while True:
@@ -15,6 +16,7 @@ def get_line_tokens(conf, line):
                 state = not state
             except:
                 break
+
     for group, is_word in get_raw_groups(it):
         if not group or (not is_word and group in conf.ignored_tokens):
             continue

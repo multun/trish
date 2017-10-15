@@ -1,11 +1,13 @@
 import os
 from setuptools import setup
 
+
 def read(shortname):
     filename = os.path.join(os.path.dirname(__file__), shortname)
     with open(filename, encoding='utf-8') as f:
         contents = f.read()
     return contents
+
 
 setup(
     name="trish",

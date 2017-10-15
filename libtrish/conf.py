@@ -42,6 +42,7 @@ class BaseTrishConf(ABC):
     def exporter(self, chal, stats):
         raise NotImplemented()
 
+
 class DefaultTrishConf(BaseTrishConf):
     Challenge = Challenge
     ChalStats = DefaultChalStats
