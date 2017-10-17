@@ -66,4 +66,4 @@ class DefaultTrishConf(BaseTrishConf):
 
 def import_conf(path):
     spath = path.split('.')
-    return getattr(spath[-1], import_module('.'.join(spath[:-1])))
+    return getattr(import_module('.'.join(spath[:-1])), spath[-1])
