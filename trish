@@ -2,12 +2,11 @@
 
 import sys
 
-from libtrish import compare
-from libtrish.conf import load_conf
+from libtrish import compare, load_conf
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} fileA fileB")
         exit(1)
     conf = load_conf()
-    compare(conf, sys.argv[1], sys.argv[2])
+    compare(conf(), sys.argv[1], sys.argv[2])
