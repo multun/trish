@@ -13,6 +13,11 @@ class Challenge():
 
 
 def evaluate_match(conf, a, line_a, b, line_b):
+    # start from the line right after the
+    # match (ignore single line matches)
+    line_a += 1
+    line_b += 1
+
     for i in count():
         if line_a + i >= len(a.lines) \
            or line_b + i >= len(b.lines) \
@@ -33,7 +38,7 @@ def get_pairs(a, b):
 def evaluate_chal(conf, chal):
     stats = conf.ChalStats(conf)
     for occa, occb in get_pairs(chal.a, chal.b):
-        eval_res = conf.evaluate_match(chal.a, occa + 1, chal.b, occb + 1)
+        eval_res = conf.evaluate_match(chal.a, occa, chal.b, occb)
         if eval_res:
             stats.register(eval_res)
     stats.finalize(conf)
