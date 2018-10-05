@@ -189,6 +189,28 @@ def pairs(l):
         for j in range(i+1, len(l)):
             yield (l[i], l[j])
 
+class Match():
+    def __init__(self, *items):
+        assert len(items) == 2
+        self.items = tuple(items)
+
+    @property
+    def left(self):
+        return self.items[0]
+
+    @property
+    def right(self):
+        return self.items[1]
+
+    def __getitem__(self, i):
+        return self.items[i]
+
+    def __str__(self):
+        return f'{self.left} / self.right'
+
+    def __repr__(self):
+        return f'<Match {self.left} {self.right}>'
+
 
 def group_codebase_files(matches):
     # a map from a pair of codebases to a map of pair of files
@@ -202,53 +224,130 @@ def group_codebase_files(matches):
 
             pairmaker = base_a.pairmaker(base_b)
             codebase_pair = pairmaker(base_a, base_b)
-            line_pair = pairmaker(line_a.line_number, line_b.line_number)
+            line_pair = pairmaker(line_a, line_b)
             file_pair = pairmaker(line_a.source_file, line_b.source_file)
-            codebases_map[codebase_pair][file_pair].append(line_pair)
+            codebases_map[codebase_pair][file_pair].append(Match(*line_pair))
 
     return {k: dict(v) for k, v in codebases_map.items()}
 
+class LineRun():
+    def __init__(self):
+        self.lines = []
+        self.neighbors = []
+        self.visited = False
+
+class LineCluster():
+    def __init__(self):
+        self.lines = []
+        self.min_line = None
+        self.max_line = None
+
+    def __len__(self):
+        return len(self.lines)
+
+    def update(self, line):
+        self.lines.append(line)
+        line_no = line.line_number
+        if self.min_line is None or line_no < self.min_line.line_number:
+            self.min_line = line
+        if self.max_line is None or line_no > self.max_line.line_number:
+            self.max_line = line
+
+    def __repr__(self):
+        return (f'<LineCluster {len(self)}'
+                f' {self.min_line.line_number}'
+                f':{self.max_line.line_number}>')
+
 
 def group_lines(options, codebases_map):
+    '''
+    {
+       (base_a, base_b): {
+           (file_a, file_b): [
+               (line_a, line_b)
+           ]
+       }
+    }
+    '''
     res = {}
     for codebase_pair, file_map in codebases_map.items():
         file_res = {}
         for file_pair, matches in file_map.items():
-            # group matches between files by geometric angle
-            angle_map = defaultdict(list)
-            def line_pair_angle(line_pair):
-                return line_pair[1] - line_pair[0]
+            left_file, right_file = file_pair
+            run_map = {}
+            def compute_runs(pair_i):
+                # the same item can be involved in more than a single pair
+                # the set can be avoided by changing algorithms instead
+                match_list = list({match[pair_i] for match in matches})
+                # insane stuff can be done here
+                # we may sort this O(file_size), which may not be a good idea,
+                # given that most of the time, len(matches) <<< file_size.
+                # we could store a list of file lines somewhere, and test if the
+                # line has matched using a hash set.
+                match_list.sort(key=lambda m: m.line_number)
 
-            for line_pair in matches:
-                angle_map[line_pair_angle(line_pair)].append(line_pair)
+                runs = []
 
-            ranges = []
-            for angle, matches in angle_map.items():
-                matches.sort()
-
-                range_start = None
+                run = LineRun()
                 expected_i = None
 
-                def end_range():
-                    if range_start is not None:
-                        range_end = expected_i - 1
-                        range_len = range_end - range_start
-                        ranges.append((range_start,
-                                       range_start + angle,
-                                       range_len + options.window_size))
+                def end_run():
+                    nonlocal run
+                    if run.lines:
+                        runs.append(run)
+                        run = LineRun()
 
-                for line_pair in matches:
-                    line_a, line_b = line_pair
-                    if line_a != expected_i:
-                        end_range()
-                        range_start = line_a
-                    expected_i = line_a + 1
+                for line in match_list:
+                    if expected_i is None or line.line_number != expected_i:
+                        end_run()
 
-                end_range()
+                    run_map[line] = run
+                    run.lines.append(line)
 
-            file_res[file_pair] = ranges
+                end_run()
+                return match_list, runs
+
+            left_matches, left_runs = compute_runs(0)
+            right_matches, right_runs = compute_runs(1)
+
+            for left_line, right_line in matches:
+                left_run = run_map[left_line]
+                right_run = run_map[right_line]
+                left_run.neighbors.append(right_run)
+                right_run.neighbors.append(left_run)
+
+            # groups connected clusters, marking these as visited
+            def get_cluster(run):
+                if run.visited:
+                    return
+
+                run.visited = True
+                yield from run.lines
+                for neighbor in run.neighbors:
+                    yield from get_cluster(neighbor)
+
+            clusters = []
+            # runs should be connected now, so it doesn't matter which side is
+            # iterated over
+            for run in left_runs:
+                new_cluster = list(get_cluster(run))
+                if not new_cluster:
+                    continue
+
+                left_cluster = LineCluster()
+                right_cluster = LineCluster()
+                for line in new_cluster:
+                    if line.source_file is left_file:
+                        left_cluster.update(line)
+                    else:
+                        right_cluster.update(line)
+
+                assert len(left_cluster) and len(right_cluster)
+                clusters.append((left_cluster, right_cluster))
+
+            file_res[file_pair] = clusters
         res[codebase_pair] = file_res
-    return res
+        return res
 
 
 def rate_grouped_lines(codebases_map):
@@ -267,10 +366,34 @@ def process_matches(options, matches):
         res[f.__name__] = f_res
         return f_res
 
+    '''
+    {
+       Canon: [Lines]
+    }
+    '''
     res['matches'] = matches
+    '''
+    {
+       (base_a, base_b): {
+           (file_a, file_b): [
+               (line_a, line_b)
+           ]
+       }
+    }
+    '''
     codebase_file_groups = store(group_codebase_files, matches)
+    '''
+    {
+       (base_a, base_b): {
+           (file_a, file_b): [
+               <LineCluster size begin:end>
+           ]
+       }
+    }
+    '''
     lengthful_matches = store(group_lines, options, codebase_file_groups)
-    return store(rate_grouped_lines, lengthful_matches), res
+    return lengthful_matches, res
+    # return store(rate_grouped_lines, lengthful_matches), res
 
 
 def main(args=sys.argv[1:]):
