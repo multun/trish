@@ -7,9 +7,20 @@ from itertools import chain
 from pathlib import PosixPath
 from pprint import pprint
 
+try:
+    from tqdm import tqdm
+    progressbar = tqdm
+except:
+    progressbar = lambda x: x
+
 TOKEN_SPLITTER = re.compile(' |(\w+)')
 
 DEFAULT_WINDOW_SIZE = 3
+
+import logging
+import sys
+logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, format='%(asctime)s:%(levelname)s - %(message)s')
+logger = logging.getLogger()
 
 def tokenize(line):
     is_group = False
@@ -134,7 +145,7 @@ def preprocess_source(source_file, window_size):
 
 def preprocess_sources(source_files, window_size):
     '''creates line groups'''
-    for source_file in source_files:
+    for source_file in progressbar(source_files):
         yield from preprocess_source(source_file, window_size)
 
 
@@ -216,7 +227,7 @@ def group_codebase_files(matches):
     # a map from a pair of codebases to a map of pair of files
     # to list of pairs of matches
     codebases_map = defaultdict(lambda: defaultdict(list))
-    for keygroup, occurences in matches:
+    for keygroup, occurences in progressbar(matches):
         for line_a, line_b in pairs(occurences):
             base_a, base_b = line_a.codebase, line_b.codebase
             if base_a is base_b:
@@ -270,7 +281,7 @@ def group_lines(options, codebases_map):
     }
     '''
     res = {}
-    for codebase_pair, file_map in codebases_map.items():
+    for codebase_pair, file_map in progressbar(codebases_map.items()):
         file_res = {}
         for file_pair, matches in file_map.items():
             left_file, right_file = file_pair
@@ -347,7 +358,7 @@ def group_lines(options, codebases_map):
 
             file_res[file_pair] = clusters
         res[codebase_pair] = file_res
-        return res
+    return res
 
 
 def rate_grouped_lines(codebases_map):
@@ -381,6 +392,7 @@ def process_matches(options, matches):
        }
     }
     '''
+    logger.info('grouping codebases / files')
     codebase_file_groups = store(group_codebase_files, matches)
     '''
     {
@@ -391,6 +403,7 @@ def process_matches(options, matches):
        }
     }
     '''
+    logger.info('graph madness')
     lengthful_matches = store(group_lines, options, codebase_file_groups)
     return lengthful_matches, res
     # return store(rate_grouped_lines, lengthful_matches), res
@@ -400,9 +413,10 @@ def main(args=sys.argv[1:]):
     options = _trish_parser().parse_args(args=args)
     source_files = find_sources(options.targets, options.pattern)
     window_size = options.window_size
+    logger.info('correlating sources')
     matches = correlate_sources(source_files, window_size)
     scores, metadata = process_matches(options, matches)
-    pprint(metadata)
+    # pprint(metadata)
     # for codebase_pair, score in scores.items():
     #     codebase_a, codebase_b = codebase_pair
     #     print(f'{score}\t{codebase_a.name}\t{codebase_b.name}')
